@@ -1,23 +1,87 @@
+
+
 import requests
 import json
-import os 
+import os
 from dotenv import load_dotenv
-load_dotenv() 
 
-API_TOKEN = os.getenv("API_TOKEN") 
+load_dotenv()
 
-url = "http://localhost:8080/platform-asset-1.0.0/latest/filter/access"
+# Configuration
+MOCK_API_URL = "http://localhost:8080/platform-asset-1.0.0/latest/filter/access"
+MOCK_API_TOKEN = os.getenv("MOCK_API_TOKEN")
 
-payload = json.dumps({
-  "domain": "lremcofc",
-  "offset": 1,
-  "pageSize": 10
-})
-headers = {
-  'Content-Type': 'application/json',
-  'Authorization': API_TOKEN
-}
+def fetch_and_filter_assets():
+    # Prepare request
+    payload = {
+        "domain": "lremcofc",
+        "offset": 1,
+        "pageSize": 100
+    }
 
-response = requests.request("POST", url, headers=headers, data=payload)
+    headers = {
+        'Authorization': f'Bearer {MOCK_API_TOKEN}',
+        'Content-Type': 'application/json'
+    }
 
-print(response.text)
+    try:
+        # 1. Make API request
+        response = requests.post(
+            MOCK_API_URL,
+            json=payload,
+            headers=headers,
+            timeout=5
+        )
+        response.raise_for_status()  # Raises exception for 4XX/5XX responses
+
+        print(f"Status Code: {response.status_code}")
+        
+        # 2. Parse response
+        response_data = response.json()
+        print(f"Full response: {json.dumps(response_data, indent=2)}")
+        
+        # 3. Extract assets (with error handling)
+        assets = response_data.get('data', {}).get('assets', [])
+        if not isinstance(assets, list):
+            raise ValueError("Invalid assets format in response")
+
+        # 4. Filter assets
+        filtered_assets = [
+            {
+                "assetName": asset["displayName"],
+                "thingId": asset.get("thingCode", ""),  # Using .get() for safety
+                "displayName": asset["displayName"],
+                "operationStatus": asset["operationStatus"]
+            }
+            for asset in assets
+            if (asset.get("operationStatus") == "ACTIVE" and 
+                asset.get("displayName", "").startswith('F'))
+        ]
+
+        # 5. Prepare final output
+        result = {
+            "success": True,
+            "data": {
+                "assets": filtered_assets,
+                "total": len(filtered_assets),
+                "original_total": response_data.get('data', {}).get('total', 0)
+            }
+        }
+
+        print(f"Filtered assets: {json.dumps(result, indent=2)}")
+        return result
+
+    except requests.exceptions.RequestException as e:
+        error_msg = f"API request failed: {str(e)}"
+        print(error_msg)
+        return {"success": False, "error": error_msg}
+    except (KeyError, ValueError) as e:
+        error_msg = f"Data processing error: {str(e)}"
+        print(error_msg)
+        return {"success": False, "error": error_msg}
+
+# Execute the function
+if __name__ == "__main__":
+    fetch_and_filter_assets()
+
+
